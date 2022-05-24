@@ -21,6 +21,7 @@ rr2:            Radius scaling factor for star 2
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+//#include <gsl/gsl_rng.h>
 #include "likelihood3.h"
 
 
@@ -86,8 +87,7 @@ void quickSort(double arr[], int low, int high)
 void remove_median(double *arr, long begin, long end)
 {
     // First sort the orignal array
-    double *sorted_arr;
-    sorted_arr = (double *)malloc((end-begin)*sizeof(double));
+    double sorted_arr[end-begin];
 
     long Nt = end - begin;
 
@@ -102,7 +102,7 @@ void remove_median(double *arr, long begin, long end)
     double median = sorted_arr[mid];
 
     for (int i=0; i<Nt; i++) {arr[begin + i] -= median;}
-    free(sorted_arr);
+    return;
 }
 
 
@@ -186,8 +186,8 @@ Values taken from Fig 5 (Claret et. al 2020: Doppler beaming factors for white d
 Using values for g=5
 Input: log Temperature in Kelvin [NOT NORMALIZED BY SOLAR TEMP]
 */
-double get_alpha_beam(double logT){
-
+double get_alpha_beam(double logT)
+{
     // Initializing the alpha and temperature values
     double alphas[4] = {6.5, 4.0, 2.5, 1.2};
     double logTs[4] = {3.5, 3.7, 3.9, 4.5};
@@ -199,7 +199,8 @@ double get_alpha_beam(double logT){
     int j = 3;
     while(logT < logTs[j]) j--;
 
-    return (alphas[j+1] + (alphas[j+1] - alphas[j]) / (logTs[j+1] - logTs[j]) * (logT - logTs[j+1]))/4;
+    double alpha_beam = ((alphas[j+1] + (alphas[j+1] - alphas[j]) / (logTs[j+1] - logTs[j]) * (logT - logTs[j+1]))/4 );
+    return alpha_beam;
 }
 
 
@@ -224,7 +225,9 @@ double beaming(double P, double M1, double M2, double e, double inc,
     double fac4 = sin(inc) * cos(omega0 + nu) / sqrt(1 - SQR(e));
     double ppm = 1.e-6;
 
-    return -2830. * alpha_beam * fac1 * fac2 * fac3 * fac4 * ppm;
+    double beam = -2830. * alpha_beam * fac1 * fac2 * fac3 * fac4 * ppm;
+
+    return beam;
 }
 
 
@@ -523,7 +526,7 @@ Parameters:
 Note that the reflection coefficients are set to 1 for now
 */
 void calc_light_curve(double *times, long Nt, double *pars, double *template){
-    
+
     // Extract the paramters
     double logM1 = pars[0];
     double logM2 = pars[1];
@@ -582,7 +585,7 @@ void calc_light_curve(double *times, long Nt, double *pars, double *template){
         alpha_ref_1 = .1;
         alpha_ref_2 = .1;
     }
-    
+
     double M1 = pow(10., logM1);
     double M2 = pow(10., logM2);
 
@@ -606,10 +609,12 @@ void calc_light_curve(double *times, long Nt, double *pars, double *template){
     Norm2 = SQR(R2) * QUAD(Teff2) / (SQR(R1) * QUAD(Teff1) + SQR(R2) * QUAD(Teff2));
 
     // Set alpha_beam
-    if (compute_alpha_beam == 1) {
+    if (compute_alpha_beam == 1) 
+    {
         alpha_beam_1 = get_alpha_beam(log10(Teff1));
         alpha_beam_2 = get_alpha_beam(log10(Teff2));
     }
+
     alpha_beam_1 *= extra_alpha_beam_1;
     alpha_beam_2 *= extra_alpha_beam_2;
 
@@ -671,6 +676,8 @@ void calc_light_curve(double *times, long Nt, double *pars, double *template){
         double ref2 = reflection(Pdays, M2, M1, e, inc, (omega0+PI), nu_arr[i], R1, alpha_ref_2);
 
         Amag2[i] = Norm2 * (1 + beam2 + ellip2 + ref2);
+
+        //printf("Beaming %lf Ellipsoidal %lf reflection %lf Norm1 % lf Norm 2 %lf \n", beam1+beam2, ellip1+ellip2, ref1+ref2, Norm1, Norm2);
 
         // Eclipse contribution (delta F = F * (ecl area / tot area))
         double area = eclipse_area(R1, R2, X1_arr[i], X2_arr[i], Y1_arr[i], Y2_arr[i]);
@@ -921,25 +928,15 @@ Parameters:
 
 double loglikelihood(double time[], double lightcurve[], double noise[],
 		     long N, double params[], double mag_data[], double magerr[], 
-             int savedata)
+             int weight)
 {
-  double *template;
+  double template[N];
   double residual;
   double chi2;
   long i;
-
-  //allocate memory for light curve
-  template = (double *)malloc(N*sizeof(double));
 	
   //compute template light curve
   calc_light_curve(time,N,params,template);
-	
-    FILE* likelihood_file;
-    if (savedata)
-    {
-        char *lik_fname = "../debug/likelihood_original.txt";
-        likelihood_file = fopen(lik_fname, "w");
-    }
 
   //sum square of residual to get chi-squared
   chi2 = 0.;
@@ -953,41 +950,36 @@ double loglikelihood(double time[], double lightcurve[], double noise[],
       residual = (template[i]-lightcurve[i])/noise[i];
       chi2    += residual*residual;
 
-      if (savedata)
-        {
-            fprintf(likelihood_file, "%.10g\t%.10g\t%.10g\t%.10g\n", 
-            template[i], lightcurve[i], noise[i], chi2);
-        }
     }
-  //printf("chain chi2 is: %.10e\n", chi2);
-  //free memory
-  free(template);
-  
-  // Calculate magnitudes (Sets G, B-V, V-G and G-T mags)
-  double D = mag_data[0];
-  double Gmg, BminusV, VminusG, GminusT;
-  
-  calc_mags(params, D, &Gmg, &BminusV, &VminusG, &GminusT);
-  double computed_mags[4] = {Gmg, BminusV, VminusG, GminusT};
-  //printf("D, G, B-V, V-G, G-T:%f %f %f %f %f\n", magerr[0], magerr[1],mag_data[2],mag_data[3],mag_data[4]);
-  //printf("G, B-V, V-G, G-T:%f %f %f %f \n", Gmg, BminusV, VminusG, GminusT);
-  
-  for (i=0;i<4;i++)
-  {
-    residual = (computed_mags[i] - mag_data[i+1])/magerr[i];
-    chi2 += residual*residual;
 
-    if (savedata)
-        {
-            fprintf(likelihood_file, "%.10g\t%.10g\t%.10g\t%.10g\n", 
-            computed_mags[i], mag_data[i+1], magerr[i], chi2);
-        }
+  if (weight != 0)
+  {
+    // Calculate magnitudes (Sets G, B-V, V-G and G-T mags)
+    double D = mag_data[0];
+    double Gmg, BminusV, VminusG, GminusT;
+    
+    calc_mags(params, D, &Gmg, &BminusV, &VminusG, &GminusT);
+    double computed_mags[4] = {Gmg, BminusV, VminusG, GminusT};
+    //printf("D, G, B-V, V-G, G-T:%f %f %f %f %f\n", magerr[0], magerr[1],mag_data[2],mag_data[3],mag_data[4]);
+    //printf("G, B-V, V-G, G-T:%f %f %f %f \n", Gmg, BminusV, VminusG, GminusT);
+    
+    for (i=0;i<4;i++)
+    {
+        residual = (computed_mags[i] - mag_data[i+1])/magerr[i];
+        chi2 += residual*residual;
+
+    }
   }
 
-    if (savedata)
-    {
-        fclose(likelihood_file);
-    }
+  // Check for Roche Overflow
+  int RocheOverFlowFlag = 0;
+  RocheOverFlowFlag = RocheOverflow(params);
+
+  if (RocheOverFlowFlag)
+  {
+    chi2 = BIG_NUM;
+  }
+
   //return log likelihood
   return(-chi2/2.0);
 }
@@ -1057,6 +1049,7 @@ void write_lc_to_file(double pars[], char fname[])
     }
 
     fclose(lcfile);
+    return;
 }
 
 // Function to monitor Roche Lobe overflow (Eggleton 1985)
@@ -1069,7 +1062,7 @@ double Eggleton_RL(double q)
 // Everything in cgs - I am comparing Roche Lobe to Binary Separation
 // at periapse
 // Returns 1 if Roche Lobe overflows...
-int RocheOverflow(double *pars, double *RO1, double*RO2)
+int RocheOverflow(double *pars)
 {   
     double M1 = pow(10., pars[0]) * MSUN;
     double M2 = pow(10., pars[1]) * MSUN;
@@ -1087,16 +1080,18 @@ int RocheOverflow(double *pars, double *RO1, double*RO2)
     double R2_over_sep = R2 / (Bin_Sep * (1 - ecc));
 
     int flag = ((RL1_over_sep < R1_over_sep) || (RL2_over_sep < R2_over_sep)) ? 1 : 0;
-   
-    *RO1 = R1_over_sep/RL1_over_sep;
-    *RO2 = R2_over_sep/RL2_over_sep;
-    //printf("M,R1,R2,T: %f %f %f %f\n",(M1+M2)/MSUN,R1/RSUN,R2/RSUN,period/SEC_DAY);
-    //printf("r1,r2,sep,ecc,RL1os,RL2os: %f, %f, %f, %f, %f, %f\n",R1,R2,Bin_Sep, ecc, RL1_over_sep, RL2_over_sep);
-    //printf("R1os: %f, %f, %f\nR2os: %f, %f, %f\n", R1_over_sep, RL1_over_sep, RO1, R2_over_sep, RL2_over_sep, RO2);
-   
+
     return flag;
 
 }
+
+// Structure for generating parameters
+struct InputPars
+{
+    bounds limits;
+    int flag;
+
+};
 
 //Leave commented out unless for debugging purposes
 

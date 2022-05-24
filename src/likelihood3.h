@@ -22,22 +22,41 @@
     #define NPARS 10
 #endif
 #define SAVECOMP 0 // Save the individual lightcurve components in the txt file
+#define BIG_NUM 1.e15
 
 #define SQR(x) ((x)*(x))
 #define CUBE(x) ((x)*(x)*(x))
 #define QUAD(x) ((x)*(x)*(x)*(x))
 
-struct bounds{
+
+struct bounds
+{
   double lo;
   double hi;
 };
 
-struct gauss_bounds{
+struct gauss_bounds
+{
   int flag;
 };
 
+#define NTAB 32
+// structure to hold random number values
+struct RNG_Vars
+{
+  long idum2; // some seed
+  long iy;
+  long iv[NTAB];
+  int iset;
+  double gset;
+  // Number of times the rng is called
+  long cts;
+};
+
+
 typedef struct bounds bounds;
 typedef struct gauss_bounds gauss_bounds;
+typedef struct RNG_Vars RNG_Vars;
 
 double partition (double arr[], int low, int high);
 void quickSort(double arr[], int low, int high);
@@ -56,12 +75,7 @@ double eclipse_area(double R1, double R2,
 void calc_mags(double params[],  double D, double *Gmg, double *BminusV, 
 double *VminusG, double *GminusT);
 void calc_light_curve(double *times, long Nt, double *pars,  double *template);
-void calc_radii_and_Teffs(double params[],  double *R1, double *R2, double *Teff1, double* Teff2);
-void free_1d(double *arr);
-void free_2d(double **arr, int size);
-void free_3d(double ***arr, int size1, int size2);
-double _getT(double logM);
-double _getR(double logM);
+int RocheOverflow(double *pars);
 double loglikelihood(double time[], double lightcurve[], double noise[],
-		     long N, double params[], double mag_data[], double magerr[],
-         int savedata);
+		     long N, double params[], double mag_data[], double magerr[], 
+          int weight);
