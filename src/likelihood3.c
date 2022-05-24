@@ -562,7 +562,7 @@ void calc_light_curve(double *times, long Nt, double *pars, double *template){
 	if (ALPHA_MORE ==1){
 	  //extra alphas
 	  extra_alpha_beam_1 = exp(pars[16]);//pow(10., pars[16]);
-	  extra_alpha_beam_1 = exp(pars[17]);//pow(10., pars[17]);
+	  extra_alpha_beam_2 = exp(pars[17]);//pow(10., pars[17]);
 	  alpha_Teff_1 = pars[18];//pow(10., pars[18]);
 	  alpha_Teff_2 = pars[19];//pow(10., pars[19]);
 
@@ -757,6 +757,45 @@ void calc_light_curve(double *times, long Nt, double *pars, double *template){
 
     //fclose(lc_file);
 }
+
+/*
+This routine is an alternate interface to calc_light_curve which swaps the 
+labels for stars 1 and 2.  It is intended for a code test.
+*/
+void calc_swapped_light_curve(double *times, long Nt, double *pars, double *template){
+ 
+  double spars[22];
+  spars[0]=pars[1];//logM12
+  spars[1]=pars[0];//logM12
+  spars[2]=pars[2];//logP
+  spars[3]=pars[3];//e
+  spars[4]=pars[4];//inc
+  spars[5]=pars[5];//Omega (this param is irrelevant)
+  spars[6]=pars[6]+M_PI;//omega0
+  spars[7]=pars[7];//T0
+  spars[8]=pars[9];//rr12
+  spars[9]=pars[8];//rr12
+  if (ALPHA_FREE == 1){
+    spars[10]=pars[12];//mu_12
+    spars[12]=pars[10];//mu_12
+    spars[11]=pars[13];//tau_12
+    spars[13]=pars[11];//tau_12
+    spars[14]=pars[15];//alpha_ref_12
+    spars[15]=pars[14];//alpha_ref_12
+    if (ALPHA_MORE ==1){
+      spars[16]=pars[17];//beam
+      spars[17]=pars[16];//beam
+      spars[18]=pars[19];//Teff
+      spars[19]=pars[18];//Teff
+      spars[1]=pars[1];//e
+      if (BLENDING == 1){
+        spars[20]=pars[20];//belnding
+        spars[21]=pars[21];//flux_tune
+      }
+    }
+  }
+  calc_light_curve(times, Nt, spars, template);
+};
 
 /*
 Compute the radius and Teff for each star
@@ -1000,6 +1039,44 @@ void write_lc_to_file(double pars[], char fname[])
     fclose(lcfile);
 }
 
+// Function to monitor Roche Lobe overflow (Eggleton 1985)
+// Returns Roche Lobe radius over the binary separation
+double Eggleton_RL(double q)
+{
+    return 0.49 * pow(q, 2./3) / (0.6 * pow(q, 2./3) + log(1 + pow(q, 1./3)));
+}
+
+// Everything in cgs - I am comparing Roche Lobe to Binary Separation
+// at periapse
+// Returns 1 if Roche Lobe overflows...
+int RocheOverflow(double *pars, double *RO1, double*RO2)
+{   
+    double M1 = pow(10., pars[0]) * MSUN;
+    double M2 = pow(10., pars[1]) * MSUN;
+    double q = M1 / M2;
+    double period = pow(10., pars[2]) * SEC_DAY;
+    double ecc = pars[3];
+    double R1 = pow(10., _getR(pars[0]) + pars[8]*envelope_Radius(pars[0])) * RSUN; 
+    double R2 = pow(10., _getR(pars[1]) + pars[9]*envelope_Radius(pars[1])) * RSUN; 
+    double Bin_Sep = pow(G * (M1 + M2) * SQR(period) / (4.0*PI*PI), 1./3.);
+    // The factor after comes from assuming eccentric orbits
+    double RL1_over_sep = Eggleton_RL(q);
+    double RL2_over_sep = Eggleton_RL(1/q);
+
+    double R1_over_sep = R1 / (Bin_Sep * (1 - ecc));
+    double R2_over_sep = R2 / (Bin_Sep * (1 - ecc));
+
+    int flag = ((RL1_over_sep < R1_over_sep) || (RL2_over_sep < R2_over_sep)) ? 1 : 0;
+   
+    *RO1 = R1_over_sep/RL1_over_sep;
+    *RO2 = R2_over_sep/RL2_over_sep;
+    //printf("M,R1,R2,T: %f %f %f %f\n",(M1+M2)/MSUN,R1/RSUN,R2/RSUN,period/SEC_DAY);
+    //printf("r1,r2,sep,ecc,RL1os,RL2os: %f, %f, %f, %f, %f, %f\n",R1,R2,Bin_Sep, ecc, RL1_over_sep, RL2_over_sep);
+    //printf("R1os: %f, %f, %f\nR2os: %f, %f, %f\n", R1_over_sep, RL1_over_sep, RO1, R2_over_sep, RL2_over_sep, RO2);
+   
+    return flag;
+
+}
 
 //Leave commented out unless for debugging purposes
 
