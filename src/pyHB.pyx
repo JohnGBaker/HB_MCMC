@@ -116,9 +116,9 @@ cpdef RocheOverflow(params):
   cpars[:]=[  logM1, logM2, logP_day, e, inc, 0, omega0, T0_day, log_rad1_rescale,log_rad2_rescale, mu1, tau1, mu2, tau2, alprefl1, alprefl2, ln_beam_resc_1, ln_beam_resc_2, alp_Teff_1, alp_Teff_2, blend_frac, flux_tune]
   RO1=0;RO2=0
 
-  itest = likelihood3.RocheOverflow(&cpars[0],&RO1,&RO2);
+  itest = likelihood3.RocheOverflow(&cpars[0]);
   #print('returning calc_radii_and_Teffs:',R1,R2,Teff1,Teff2)
-  return itest, RO1,RO2
+  return itest
 
 cpdef getR(logM):
   cdef x

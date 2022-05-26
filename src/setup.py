@@ -5,7 +5,7 @@ from distutils.sysconfig import get_python_lib
 import sys
 
 
-setup(name="pyHB",version="0.0.3",
+setup(name="pyHB",version="0.0.4",
     ext_modules=cythonize(Extension("pyHB",
                                     ["pyHB.pyx"],
                                     #["pyHB.pyx","likelihood3.c"],
